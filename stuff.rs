@@ -6,7 +6,7 @@ Used to parse user initial sub-grids.
 
 > by adrien champion
 
-> with nobody
+> with Xuezheng Ma
 
 > with nobody
 
@@ -36,39 +36,24 @@ println!("some code to talk about")
 ```
 
 */
-
 use cfg::{ Syntax, MetaData } ;
 use range::Range ;
-
+use std::sync::Arc;
 use grid::Status ;
 use frontend::SubGrid ;
-use std::sync::Arc;
 
 /// Creates the parser for user initial sub-grids.
 pub fn mk_parser() -> Result<Syntax, String> {
   use cfg::* ;
   let rules = r#"
-
-    8 comment = ["//" ..."\n"?] 
-    1 player = ["player" .w? ":" .w? ?comment .w? .t!:"player_name" .w?]
-    2 dead = { "0":!"alive" "_":!"alive" ".":!"alive" }
-    3 alive = { "1":"alive" "*":"alive" "x":"alive" }
-    4 line = [.w? .r!({alive dead}) "," .w?]
-    5 try = {"0":!"alive" "_":!"alive" ".":!"alive" 
-        "1":"alive" "*":"alive" "x":"alive" 
-        comment "," " " "\n"}
-    7 grid = ["grid" .w? "(" .w? ?comment .w?
-    .$:"height" .w? "," .w? ?comment .w?
-    .$:"width" .w? ")" .w? "{" .r!(try) .w? "}"]
-    88 document = [
-    .l(comment)
-    .l(player)
-    .l(comment)
-    .l(grid)
-    .l(comment)
-    ]
+    /// added player, grid, document
+    21 dead = { "0":!"alive" "_":!"alive" ".":!"alive" }
+    22 alive = { "1":"alive" "*":"alive" "x":"alive" }
+    23 player = ["player" .w? ":" .w? .t!:" player_name" .w?]
+    24 grid = ["grid" .w? "(" .w? .$:"height" .w? "," .w? .$:"width" .w? ")" .w? "{" .r!(try) .w? "}"]
+    25 document = .r!([.w? player .w? ":" .w? .$:grid .w?])
   "# ;
-  
+
   match syntax_errstr(rules) {
     Err(err) => return Err(
       format!("could not create parser:\n{}", err)
@@ -85,60 +70,64 @@ pub fn mk_parser() -> Result<Syntax, String> {
 pub fn ast_to_sub_grid(
   id: usize, ast: & [ Range<MetaData> ]
 ) -> Result<SubGrid, String> {
+
   use cfg::MetaData::* ;
 
-  let mut height : i32 = 0 ;
-  let mut widthh : i32 = 0 ;
-  let mut v = vec![]; // a vec to store all the status
-  let mut name : &String = &"ASD".to_string(); // player name
-  for token in ast.iter() {
-    println!("{:?}", token)
-    match (token.data) {
-      MetaData::String(ref x,ref y) => {
-        name = &(**y); // match player_name
-      },
-      MetaData::F64(ref x, ref y) => {
-        if **x == "height" {
-          height = *y as i32; // match height
-        }
-        else{
-          widthh = *y as i32; // match widthh
-        }
-      },
-      MetaData::Bool(ref x, ref y) => {
-        // println!("Yes");
-        if (*y == true){
-          v.push(Status::Live(id)); // match live status
-        }
-        else{
-          v.push(Status::Dead); // match dead status
-        }
-      },
+  let mut height : f64 = 0 ;
+  let mut width : f64 = 0 ;
+  let mut vec = vec![];
+  let mut name : &String = &"ASD".to_string();
 
-      _ => {}, // match nothing
+  /// check each token's MetaData
+  for token in ast.iter() {
+
+    match (token.data) {
+
+      MetaData::String(ref x,ref name) => {
+        name = &(**name);
+      },
+      /// height or width
+      MetaData::F64(ref x, ref size) => {
+        if **x == "height" {
+          height = *size as f64;
+        }
+        else{
+          width = *size as f64;
+        }
+      },
+      /// died or alive
+      MetaData::Bool(ref x, ref alive) => {
+        if (*alive == true){
+          vec.push(Status::Live(id));
+        }
+        else{
+          vec.push(Status::Dead);
+        }
+      },
+      _ => {/*do notihng*/},
     };
   }
 
-  let mut result = vec![]; // vec<vec<Status>>
-  let mut t = vec![]; // temp variable
-  let mut i = 0; // iter variable
-  for status in v.iter() {
-    i += 1;
-    t.push(status.clone());
-    if i == widthh {
-      i = 0;
-      result.push(t.clone()); // push a row into vec<vec<Status>>
-      t.clear();
+  let mut result = vec![];
+  let mut row = vec![];
+  let mut size = 1;
+  /// go through every row
+  for status in vec.iter() {
+    row.push(status.clone());
+    if size == width {
+      result.push(row.clone());
+      row.clear();
+      size = 1;
     }
   }
+
   let subgrid = SubGrid::mk(name.clone(), result);
-
-
-  if v.len() == (widthh * height) as usize {
+  if vec.len() == (width * height) as usize {
     Result::Ok(subgrid)
   } else {
-    Result::Err("I don't care.".to_owned()) // input error
+    Result::Err("Err".to_owned())
   }
+  size++;
 }
 
 
